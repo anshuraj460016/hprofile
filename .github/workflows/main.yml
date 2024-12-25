@@ -1,5 +1,5 @@
 name: Hprofile Actions
-on: [push, workflow_dispatch]
+on:  workflow_dispatch
 env: 
   AWS_REGION: us-west-2
   ECR_REPOSITORY: actapp
@@ -74,7 +74,7 @@ jobs:
          access_key: ${{ secrets.AWS_ACCESS_KEY_ID }}
          secret_key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
          registry: ${{ secrets.REGISTRY }}
-         repo: vprofileapp
+         repo: actapp
          region: ${{ env.AWS_REGION }} 
          tags: latest,${{ github.run_number }}
          daemon_off: false
