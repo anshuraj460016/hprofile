@@ -34,7 +34,8 @@ jobs:
 
       # Run sonar-scanner
       - name: SonarQube Scan
-        run: sonar-scanner
+        run:
+         sh  sonar-scanner \
            -Dsonar.host.url=${{ secrets.SONAR_URL }}
            -Dsonar.login=${{ secrets.SONAR_TOKEN }}
            -Dsonar.organization=${{ secrets.SONAR_ORGANIZATION }}
@@ -44,7 +45,11 @@ jobs:
            -Dsonar.jacoco.reportsPath=target/jacoco.exec
            -Dsonar.java.checkstyle.reportPaths=target/checkstyle-result.xml
            -Dsonar.java.binaries=target/test-classes/com/visualpathit/account/controllerTest/
-
+         if [if [ $? -ne 0 ]; then
+            echo "SonarQube scan failed!"
+            exit 1
+         fi
+         
       # Check the Quality Gate status
       - name: SonarQube Quality Gate check
         id: sonarqube-quality-gate-check
