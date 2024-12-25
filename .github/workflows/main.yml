@@ -1,6 +1,8 @@
 name: Hprofile Actions
-on:  workflow_dispatch
-env: 
+on:
+  workflow_dispatch
+
+env:
   AWS_REGION: us-west-2
   ECR_REPOSITORY: actapp
   ECS_SERVICE: vproapp-act-svc
@@ -12,44 +14,35 @@ jobs:
   Testing:
     runs-on: ubuntu-latest
     steps:
-      - name: Code checkout
+      - name: Checkout Code
         uses: actions/checkout@v4
 
       - name: Maven Test
-        run: mvn test
+        run: mvn test || exit 1  # Exit with failure on test failure
 
       - name: Checkstyle
-        run: mvn checkstyle:checkstyle
+        run: mvn checkstyle:checkstyle || exit 1  # Exit with failure on checkstyle failure
 
-      # Setup java 11 to be default (sonar-scanner requirement as of 5.x)
       - name: Set Java 11
         uses: actions/setup-java@v3
         with:
           distribution: 'temurin' # See 'Supported distributions' for available
           java-version: '11'
 
-      # Setup sonar-scanner
       - name: Setup SonarQube
         uses: warchant/setup-sonar-scanner@v7
 
-      # Run sonar-scanner
-      - name: SonarQube Scan
-        run: sonar-scanner
-           -Dsonar.host.url=${{ secrets.SONAR_URL }}
-           -Dsonar.login=${{ secrets.SONAR_TOKEN }}
-           -Dsonar.organization=${{ secrets.SONAR_ORGANIZATION }}
-           -Dsonar.projectKey=${{ secrets.SONAR_PROJECT_KEY }}
-           -Dsonar.sources=src/
-           -Dsonar.junit.reportsPath=target/surefire-reports/
-           -Dsonar.jacoco.reportsPath=target/jacoco.exec
-           -Dsonar.java.checkstyle.reportPaths=target/checkstyle-result.xml
-           -Dsonar.java.binaries=target/test-classes/com/visualpathit/account/controllerTest/
+      - name: SonarQube Scan  # Add logging for success/failure
+        run: |
+          sonar-scanner >> sonar_scan.log 2>&1
+          if [ $? -ne 0 ]; then
+            echo "SonarQube scan failed! See sonar_scan.log for details."
+            exit 1
+          fi
 
-      # Check the Quality Gate status
       - name: SonarQube Quality Gate check
         id: sonarqube-quality-gate-check
         uses: sonarsource/sonarqube-quality-gate-action@master
-        # Force to fail step after specific time
         timeout-minutes: 5
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
@@ -59,43 +52,43 @@ jobs:
     needs: Testing
     runs-on: ubuntu-latest
     steps:
-      - name: Code checkout
+      - name: Checkout Code
         uses: actions/checkout@v4
 
       - name: Update application.properties file
         run: |
           sed -i "s/^jdbc.username.*$/jdbc.username\=${{ secrets.RDS_USER }}/" src/main/resources/application.properties
           sed -i "s/^jdbc.password.*$/jdbc.password\=${{ secrets.RDS_PASS }}/" src/main/resources/application.properties
-          sed -i "s/db01/${{ secrets.RDS_ENDPOINT }}/" src/main/resources/application.properties          
-      
+          sed -i "s/db01/${{ secrets.RDS_ENDPOINT }}/" src/main/resources/application.properties
+
       - name: Build & Upload image to ECR
         uses: appleboy/docker-ecr-action@master
         with:
-         access_key: ${{ secrets.AWS_ACCESS_KEY_ID }}
-         secret_key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-         registry: ${{ secrets.REGISTRY }}
-         repo: actapp
-         region: ${{ env.AWS_REGION }} 
-         tags: latest,${{ github.run_number }}
-         daemon_off: false
-         dockerfile: ./Dockerfile
-         context: ./
+          access_key: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          secret_key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          registry: ${{ secrets.REGISTRY }}
+          repo: actapp
+          region: ${{ env.AWS_REGION }} 
+          tags: latest,${{ github.run_number }}
+          daemon_off: false
+          dockerfile: ./Dockerfile
+          context: ./
 
   Deploy:
     needs: BUILD_AND_PUBLISH
     runs-on: ubuntu-latest
     steps:
-      - name: Code checkout
+      - name: Checkout Code
         uses: actions/checkout@v4
 
-      - name: Configure AWS credentials
+      - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v1
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_REGION }}
-      
-      - name: Fill in the new image ID in the Amazon ECS task definition
+
+      - name: Render Task Definition
         id: task-def
         uses: aws-actions/amazon-ecs-render-task-definition@v1
         with:
@@ -103,10 +96,10 @@ jobs:
           container-name: ${{ env.CONTAINER_NAME }}
           image: ${{ secrets.REGISTRY }}/${{ env.ECR_REPOSITORY }}:${{ github.run_number }}
 
-      - name: Deploy Amazon ECS task definition
+      - name: Deploy ECS Task Definition
         uses: aws-actions/amazon-ecs-deploy-task-definition@v1
         with:
           task-definition: ${{ steps.task-def.outputs.task-definition }}
           service: ${{ env.ECS_SERVICE }}
           cluster: ${{ env.ECS_CLUSTER }}
-          wait-for-service-stability: true   
+          wait-for-service-stability: true
